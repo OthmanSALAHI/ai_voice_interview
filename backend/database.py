@@ -34,6 +34,21 @@ _pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
 # Connection management
 # ---------------------------------------------------------------------------
 
+def _build_dsn() -> str:
+    """Append keepalive parameters to DATABASE_URL so stale connections are
+    detected quickly instead of hanging forever."""
+    base = DATABASE_URL or ""
+    sep = "&" if "?" in base else "?"
+    return (
+        f"{base}{sep}"
+        "keepalives=1"
+        "&keepalives_idle=30"
+        "&keepalives_interval=10"
+        "&keepalives_count=5"
+        "&connect_timeout=10"
+    )
+
+
 def _init_pool() -> None:
     """Create the thread-safe connection pool.  Called once inside init_db()."""
     global _pool
@@ -43,27 +58,88 @@ def _init_pool() -> None:
             "Copy .env.example to .env and set DATABASE_URL."
         )
     pool_size = int(os.getenv("DB_POOL_SIZE", "10"))
-    _pool = psycopg2.pool.ThreadedConnectionPool(minconn=2, maxconn=pool_size, dsn=DATABASE_URL)
+    _pool = psycopg2.pool.ThreadedConnectionPool(
+        minconn=2,
+        maxconn=pool_size,
+        dsn=_build_dsn(),
+    )
     logger.info("PostgreSQL pool ready (max=%d) → %s", pool_size, DATABASE_URL.split("@")[-1])
+
+
+def _is_conn_alive(conn) -> bool:
+    """Return True if *conn* can still talk to the server."""
+    try:
+        conn.isolation_level          # lightweight attribute access
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
+def _reset_pool() -> None:
+    """Tear down the current pool and create a fresh one."""
+    global _pool
+    logger.warning("Resetting connection pool after stale-connection error …")
+    try:
+        if _pool is not None:
+            _pool.closeall()
+    except Exception:
+        pass
+    _init_pool()
+    logger.info("Connection pool successfully reset")
 
 
 @contextmanager
 def _get_conn() -> Generator:
     """Borrow a connection from the pool.
-    Auto-commits on clean exit; auto-rollbacks and re-raises on exception.
-    Always returns the connection to the pool.
+
+    * Validates the connection with a lightweight ping before use.
+    * If the connection is dead (postgres restarted, network blip, etc.)
+      the pool is transparently reset and a fresh connection is returned.
+    * Auto-commits on clean exit; auto-rollbacks and re-raises on exception.
+    * Always returns the connection to the pool.
     """
+    global _pool
     if _pool is None:
         raise RuntimeError("Connection pool not initialised — call init_db() first")
+
     conn = _pool.getconn()
+
+    # ── Validate the borrowed connection ────────────────────────────────────
+    if not _is_conn_alive(conn):
+        logger.warning("Stale connection detected — resetting pool")
+        try:
+            _pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        _reset_pool()
+        conn = _pool.getconn()
+
     try:
         yield conn
         conn.commit()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        # Connection dropped mid-request — reset pool so next caller gets a
+        # fresh connection instead of another dead one.
+        logger.error("DB connection error during request: %s — resetting pool", exc)
+        try:
+            _pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        _reset_pool()
+        raise
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
     finally:
-        _pool.putconn(conn)
+        try:
+            _pool.putconn(conn)
+        except Exception:
+            pass
 
 
 def _fetchone(conn, sql: str, params: tuple = ()) -> Optional[Dict]:
@@ -351,4 +427,3 @@ if __name__ == "__main__":
     print("Initializing database...")
     init_db()
     print("Database initialized successfully.")
-
