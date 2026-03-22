@@ -14,12 +14,6 @@ pipeline {
         // Credentials
         DATABASE_URL          = credentials('test-database-url')
         SECRET_KEY            = credentials('test-secret-key')
-
-        // Kubernetes
-        DEPLOY_USER           = 'sadmad'
-        K8S_MASTER            = 'server-3'
-        K8S_NAMESPACE         = 'ai-interview'
-        K8S_MANIFESTS_PATH    = '/home/sadmad/k8s'
     }
 
     options {
@@ -62,7 +56,6 @@ pipeline {
                 }
             }
         }
-
 
         // ─────────────────────────────────────────
         stage('Setup Python Environment') {
@@ -331,73 +324,6 @@ pipeline {
                 }
             }
         }
-
-        // ─────────────────────────────────────────
-        stage('Deploy to Kubernetes') {
-        // ─────────────────────────────────────────
-            steps {
-                echo 'Deploying to K3s Kubernetes cluster...'
-                sh """
-                    echo "=== Creating k8s directory on master ==="
-                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${K8S_MASTER} \
-                        'mkdir -p ${K8S_MANIFESTS_PATH}'
-
-                    echo "=== Copying k8s manifests to server-3 ==="
-                    scp -o StrictHostKeyChecking=no -r k8s/ \
-                        ${DEPLOY_USER}@${K8S_MASTER}:${K8S_MANIFESTS_PATH}/
-
-                    echo "=== Applying manifests and deploying ==="
-                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${K8S_MASTER} '
-                        export KUBECONFIG=/home/sadmad/.kube/config
-
-                        echo "=== Creating namespace ===" &&
-                        kubectl apply -f ${K8S_MANIFESTS_PATH}/k8s/namespace.yaml &&
-
-                        echo "=== Applying secrets ===" &&
-                        kubectl apply -f ${K8S_MANIFESTS_PATH}/k8s/secrets.yaml &&
-
-                        echo "=== Deploying database ===" &&
-                        kubectl apply -f ${K8S_MANIFESTS_PATH}/k8s/db-deployment.yaml &&
-
-                        echo "=== Waiting for database ===" &&
-                        kubectl rollout status deployment/postgres \
-                            -n ${K8S_NAMESPACE} --timeout=120s &&
-
-                        echo "=== Deploying backend ===" &&
-                        kubectl apply -f ${K8S_MANIFESTS_PATH}/k8s/backend-deployment.yaml &&
-
-                        echo "=== Deploying frontend ===" &&
-                        kubectl apply -f ${K8S_MANIFESTS_PATH}/k8s/frontend-deployment.yaml &&
-
-                        echo "=== Restarting deployments to pull latest images ===" &&
-                        kubectl rollout restart deployment/backend  -n ${K8S_NAMESPACE} &&
-                        kubectl rollout restart deployment/frontend -n ${K8S_NAMESPACE} &&
-
-                        echo "=== Waiting for backend rollout (10min) ===" &&
-                        kubectl rollout status deployment/backend \
-                            -n ${K8S_NAMESPACE} --timeout=600s &&
-
-                        echo "=== Waiting for frontend rollout (3min) ===" &&
-                        kubectl rollout status deployment/frontend \
-                            -n ${K8S_NAMESPACE} --timeout=180s &&
-
-                        echo "=== Deployment complete ===" &&
-                        echo "--- Pods ---" &&
-                        kubectl get pods -n ${K8S_NAMESPACE} -o wide &&
-                        echo "--- Services ---" &&
-                        kubectl get services -n ${K8S_NAMESPACE} &&
-                        echo "--- Nodes ---" &&
-                        kubectl get nodes &&
-                        echo "--- Access URLs ---" &&
-                        echo "Frontend: http://192.168.174.146:30080" &&
-                        echo "Frontend: http://192.168.174.147:30080" &&
-                        echo "Backend:  http://192.168.174.146:30800" &&
-                        echo "Backend:  http://192.168.174.147:30800" &&
-                        echo "API Docs: http://192.168.174.146:30800/docs"
-                    '
-                """
-            }
-        }
     }
 
     // ─────────────────────────────────────────
@@ -416,19 +342,12 @@ pipeline {
             ✔ Frontend built
             ✔ Backend tests passed
             ✔ Security scan done
-            ✔ Docker images built and pushed
-            ✔ App deployed to Kubernetes
+            ✔ Docker images built and pushed to Docker Hub
             ─────────────────────────────────
-            Access URLs:
-            Frontend: http://192.168.174.146:30080
-                      http://192.168.174.147:30080
-            Backend:  http://192.168.174.146:30800
-                      http://192.168.174.147:30800
-            API Docs: http://192.168.174.146:30800/docs
-            ─────────────────────────────────
-            Debug on server-3:
-            kubectl get pods -n ai-interview -o wide
-            kubectl logs -n ai-interview -l app=backend
+            Images available on Docker Hub:
+            Backend:  othmansalahi/ai-voice-interview-backend
+            Frontend: othmansalahi/ai-voice-interview-frontend
+            Tags: latest | <build-number> | <git-commit-hash>
             ─────────────────────────────────
             '''
         }
@@ -441,14 +360,8 @@ pipeline {
             Common issues:
             - Docker build failed
             - Tests failed
-            - K8s deployment timed out
-            - SSH access denied to server-3
-            ─────────────────────────────────
-            Debug commands on server-3:
-            kubectl get pods -n ai-interview
-            kubectl describe pod -n ai-interview <pod-name>
-            kubectl logs -n ai-interview -l app=backend --tail=50
-            kubectl logs -n ai-interview -l app=frontend --tail=50
+            - Docker Hub push failed (check credentials)
+            - Health check timed out
             ─────────────────────────────────
             '''
         }
