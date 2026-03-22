@@ -4,7 +4,7 @@ metadata:
   name: frontend
   namespace: ai-interview
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -26,6 +26,11 @@ spec:
         - name: frontend
           image: othmansalahi/ai-voice-interview-frontend:latest
           imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - sed -i 's/\r$//' /docker-entrypoint.d/40-runtime-config.sh 2>/dev/null || true; chmod +x /docker-entrypoint.d/40-runtime-config.sh 2>/dev/null || true; exec /docker-entrypoint.sh nginx -g 'daemon off;'
           ports:
             - containerPort: 80
           resources:

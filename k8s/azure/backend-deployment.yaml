@@ -4,7 +4,7 @@ metadata:
   name: backend
   namespace: ai-interview
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend
@@ -22,6 +22,33 @@ spec:
           labelSelector:
             matchLabels:
               app: backend
+
+      # ── Wait for Postgres before the main container ever starts ──────────
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ai-interview-secrets
+                  key: postgres-user
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ai-interview-secrets
+                  key: postgres-db
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL to be ready..."
+              until pg_isready -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "  postgres not ready yet — retrying in 3s"
+                sleep 3
+              done
+              echo "PostgreSQL is ready!"
+
       containers:
         - name: backend
           image: othmansalahi/ai-voice-interview-backend:latest

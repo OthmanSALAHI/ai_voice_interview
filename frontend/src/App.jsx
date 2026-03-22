@@ -149,6 +149,7 @@ function App() {
     setLoading(true);
     setError(null);
 
+
     try {
       const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
@@ -161,7 +162,11 @@ function App() {
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.detail || 'Login failed');
+        const detail = errData.detail;
+        const message = Array.isArray(detail)
+          ? detail.map(e => e.msg).join(', ')
+          : (detail || 'Login failed');
+        throw new Error(message);
       }
 
       const data = await response.json();
@@ -205,7 +210,11 @@ function App() {
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.detail || 'Registration failed');
+        const detail = errData.detail;
+        const message = Array.isArray(detail)
+          ? detail.map(e => e.msg).join(', ')
+          : (detail || 'Registration failed');
+        throw new Error(message);
       }
 
       const data = await response.json();

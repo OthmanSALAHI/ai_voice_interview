@@ -1,52 +1,3 @@
-# ─── StorageClass ───────────────────────────────────────
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: local-storage
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
-
----
-# ─── PersistentVolume ───────────────────────────────────
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pv
-spec:
-  capacity:
-    storage: 5Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-storage
-  local:
-    path: /var/lib/postgresql-data
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: workload
-              operator: In
-              values:
-                - database
-
----
-# ─── PersistentVolumeClaim ──────────────────────────────
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: ai-interview
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: local-storage
-  resources:
-    requests:
-      storage: 5Gi
-
----
-# ─── Deployment ─────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -91,20 +42,29 @@ spec:
           readinessProbe:
             exec:
               command:
-                - pg_isready
-                - -U
-                - interview_user
-                - -d
-                - interview_db
+                - sh
+                - -c
+                - |
+                  pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
             initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
       volumes:
         - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
-
+          hostPath:
+            path: /var/lib/ai-interview/postgres
+            type: DirectoryOrCreate
 ---
-# ─── Service ────────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
