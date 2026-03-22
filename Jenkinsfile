@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Docker Hub
+        // Docker Hub registry
         DOCKER_REGISTRY       = 'othmansalahi'
         DOCKER_IMAGE_BACKEND  = "${DOCKER_REGISTRY}/ai-voice-interview-backend"
         DOCKER_IMAGE_FRONTEND = "${DOCKER_REGISTRY}/ai-voice-interview-frontend"
