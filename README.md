@@ -1280,14 +1280,6 @@ docker-compose up -d
 
 ## 👥 Team
 
-###  Project Team
-
-| Name | Role | Responsibilities |
-|------|------|------------------|
-| **Afyf Badreddine** | Scrum Master / Product Owner | Sprint planning, backlog management, stakeholder communication, JIRA administration |
-| **Mohamed Ben Difi** | AI/ML Developer | Data preparation, model training, evaluation, recommendation engine |
-| **Ayman Chabbaki** | Full-Stack Developer | Backend architecture, FastAPI implementation, AI integration, React frontend |
-| **Hiba Dellaji** | UX/UI Designer & QA | UML design, interface mockups, usability testing, quality assurance, test validation |
 
 ### Contributions
 
